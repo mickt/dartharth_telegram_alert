@@ -1,0 +1,7 @@
+dartharth_telegram_alert.settings:
+  path: '/admin/config/system/dartharth_telegram_alert'
+  defaults:
+    _form: '\Drupal\dartharth_telegram_alert\Form\SettingsForm'
+    _title: 'Dartharth Telegram Alert Settings'
+  requirements:
+    _permission: 'administer site configuration'
