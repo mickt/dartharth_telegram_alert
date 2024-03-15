@@ -1,0 +1,6 @@
+dartharth_telegram_alert.admin_settings:
+  title: 'Dartharth Telegram Alert Settings'
+  description: 'Configure settings for Dartharth Telegram Alert.'
+  parent: system.admin_config_system
+  route_name: dartharth_telegram_alert.settings
+  weight: 100
