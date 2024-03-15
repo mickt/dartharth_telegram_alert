@@ -1,0 +1,157 @@
+<?php
+
+use GuzzleHttp\Exception\RequestException;
+use Drupal\webform\Entity\WebformSubmission;
+use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Form\FormStateInterface;
+
+/**
+ * Implements hook_webform_submission_insert().
+ */
+function dartharth_telegram_alert_webform_submission_insert(WebformSubmission $submission) {
+    $config = \Drupal::config('dartharth_telegram_alert.settings');
+    $webforms = $config->get('webforms');
+    $webform_id = $submission->getWebform()->id();
+
+    if (!empty($webforms[$webform_id]) && $webforms[$webform_id]) {
+        _dartharth_telegram_alert_send_message($submission);
+    }
+}
+
+/**
+ * Implements hook_basic_cart_order_insert().
+ */
+function dartharth_telegram_alert_basic_cart_order_insert($order) {
+    $config = \Drupal::config('dartharth_telegram_alert.settings');
+    if ($config->get('notify_orders')) {
+        _dartharth_telegram_alert_send_order_message($order);
+    }
+}
+
+
+function _dartharth_telegram_alert_send_message(WebformSubmission $submission) {
+    $config = \Drupal::config('dartharth_telegram_alert.settings');
+    $token = $config->get('telegram_bot_token');
+    $chat_id = $config->get('telegram_chat_id');
+    $data = $submission->getData();
+    $elements = $submission->getWebform()->getElementsDecodedAndFlattened();
+
+    if (empty($token) || empty($chat_id)) {
+        \Drupal::logger('dartharth_telegram_alert')->error('Telegram bot token or chat ID is not configured.');
+        return;
+    }
+
+    $base_url = \Drupal::request()->getSchemeAndHttpHost();
+
+    $message = "New webform message ".$base_url.": \n";
+
+    foreach ($data as $key => $value) {
+        $label = isset($elements[$key]['#title']) ? $elements[$key]['#title'] : $key;
+        $message .= "$label: $value\n";
+    }
+
+    $client = \Drupal::httpClient();
+    $url = "https://api.telegram.org/bot{$token}/sendMessage";
+
+    try {
+        $response = $client->post($url, [
+            'json' => [
+                'chat_id' => $chat_id,
+                'text' => $message,
+            ]
+        ]);
+
+        if ($response->getStatusCode() !== 200) {
+            \Drupal::logger('dartharth_telegram_alert')->error('Error when sending message to Telegram. Code status: @code', ['@code' => $response->getStatusCode()]);
+        }
+    } catch (RequestException $e) {
+        \Drupal::logger('dartharth_telegram_alert')->error('Error sending request to Telegram: @message', ['@message' => $e->getMessage()]);
+    }
+}
+
+function _dartharth_telegram_alert_send_order_message($order) {
+    error_log(print_r($order, true));
+
+    $config = \Drupal::config('dartharth_telegram_alert.settings');
+    $token = $config->get('telegram_bot_token');
+    $chat_id = $config->get('telegram_chat_id');
+    $client = \Drupal::httpClient();
+
+    $client_name = $order['title'][0]['value'];
+    $client_mail = $order['basic_cart_email'][0]['value'];
+    $client_phone = $order['basic_cart_phone'][0]['value'];
+    $client_comment = $order['basic_cart_message'][0]['value'];
+
+    $base_url = \Drupal::request()->getSchemeAndHttpHost();
+
+    $message = "New basic cart order from ".$base_url.":\n";
+    $message .= "Name: " . $client_name . "\n";
+    $message .= "E-mail: " . $client_name . "\n";
+    $message .= "Phone: " . $client_name . "\n";
+    $message .= "Order comment: " . $client_name . "\n";
+
+    try {
+        $response = $client->post("https://api.telegram.org/bot{$token}/sendMessage", [
+            'json' => [
+                'chat_id' => $chat_id,
+                'text' => $message,
+            ]
+        ]);
+
+        if ($response->getStatusCode() !== 200) {
+            \Drupal::logger('dartharth_telegram_alert')->error('Error when sending order message to Telegram. Code status: @code', ['@code' => $response->getStatusCode()]);
+        }
+    } catch (RequestException $e) {
+        \Drupal::logger('dartharth_telegram_alert')->error('An error occurred when sending an order request to Telegram: @message', ['@message' => $e->getMessage()]);
+    }
+}
+
+
+/**
+ * Implements hook_form_FORM_ID_alter() for node-basic-cart-order-form.
+ */
+/**
+ * Implements hook_form_FORM_ID_alter() for node-basic-cart-order-form.
+ */
+function dartharth_telegram_alert_form_node_basic_cart_order_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
+    $current_path = \Drupal::service('path.current')->getPath();
+    $form_id_from_element = isset($form['#id']) ? $form['#id'] : '';
+
+    if ($form_id_from_element == 'node-basic-cart-order-form' && $current_path == '/checkout') {
+        static $form_alter_executed = FALSE;
+
+        if (!$form_alter_executed) {
+
+            $submit_element = array_filter($form, function($element) {
+                return !empty($element['#type']) && $element['#type'] == 'submit';
+            });
+
+            if (!empty($submit_element)) {
+                $submit_key = key($submit_element);
+                $form[$submit_key]['#submit'][] = 'dartharth_telegram_alert_basic_cart_order_submit';
+            }
+
+            if (isset($form['actions']['submit']['#submit'])) {
+                array_push($form['actions']['submit']['#submit'], 'dartharth_telegram_alert_basic_cart_order_submit');
+            } else {
+                $form['actions']['submit']['#submit'][] = 'dartharth_telegram_alert_basic_cart_order_submit';
+            }
+
+            $form_alter_executed = TRUE;
+        }
+    }
+}
+
+
+
+
+
+/**
+ * Custom submit handler for the basic cart order form.
+ */
+function dartharth_telegram_alert_basic_cart_order_submit($form, \Drupal\Core\Form\FormStateInterface $form_state) {
+
+    $order_data = $form_state->getValues();
+
+    _dartharth_telegram_alert_send_order_message($order_data);
+}
